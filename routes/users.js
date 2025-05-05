@@ -76,23 +76,6 @@ router.get('/:userId/notifications', async (req, res) => {
 });
 
 // Get user challenges
-// router.get('/:userId/challenges', async (req, res) => {
-//   try {
-//     const { userId } = req.params;
-//     const user = await User.findOne({ userId }).populate({
-//       path: 'challenges',
-//       populate: { path: 'taskId' },
-//     });
-//     if (!user) {
-//       return res.status(404).json({ error: 'User not found' });
-//     }
-//     res.json(user.challenges);
-//   } catch (error) {
-//     res.status(500).json({ error: 'Failed to fetch challenges' });
-//   }
-// });
-// Get user challenges
-// Add to existing users.js
 router.get('/:userId/challenges', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -135,6 +118,42 @@ router.patch('/:taskId', async (req, res) => {
     res.json(task);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update task' });
+  }
+});
+
+// FIXME:
+router.get('/:userId/profile', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findOne({ userId }).populate('challenges');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const challenges = await Challenge.find({
+      $or: [{ creatorId: userId }, { assigneeIds: userId }],
+    });
+    res.json({
+      name: user.name,
+      email: user.email,
+      userId: user.userId,
+      streak: user.streak,
+      challenges,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+router.get('/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 module.exports = router;

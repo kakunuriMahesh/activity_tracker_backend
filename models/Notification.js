@@ -12,7 +12,23 @@ const NotificationSchema = new mongoose.Schema({
 
 module.exports = mongoose.model('Notification', NotificationSchema);
 
-// FIXME: TODO: Add read status
+// FIXME:
+
+// const mongoose = require('mongoose');
+
+// const NotificationSchema = new mongoose.Schema({
+//   notificationId: { type: mongoose.Schema.Types.ObjectId, auto: true },
+//   userId: { type: String, required: true },
+//   type: { type: String, required: true },
+//   challengeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Challenge' },
+//   message: { type: String, required: true },
+//   read: { type: Boolean, default: false },
+//   createdAt: { type: Date, default: Date.now },
+// });
+
+// module.exports = mongoose.model('Notification', NotificationSchema);
+
+// TODO: Add read status
 
 // const mongoose = require('mongoose');
 // const NotificationSchema = new mongoose.Schema({
