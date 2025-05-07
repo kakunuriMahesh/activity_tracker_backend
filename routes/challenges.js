@@ -5,6 +5,69 @@ const Notification = require('../models/Notification');
 const User = require('../models/User');
 const Task = require('../models/Task');
 
+
+// router.post('/', async (req, res) => {
+//   try {
+//     const {
+//       creatorId,
+//       assigneeIds,
+//       taskId,
+//       title,
+//       rules,
+//       exceptions,
+//       reward,
+//       status,
+//       startDate,
+//       duration,
+//     } = req.body;
+//     const creator = await User.findOne({ userId: creatorId });
+//     if (!creator) {
+//       return res.status(404).json({ error: 'Creator not found' });
+//     }
+//     const start = new Date(startDate);
+//     let endDate;
+//     switch (duration) {
+//       case 'Day':
+//         endDate = new Date(start.setDate(start.getDate() + 1));
+//         break;
+//       case 'Week':
+//         endDate = new Date(start.setDate(start.getDate() + 7));
+//         break;
+//       case 'Month':
+//         endDate = new Date(start.setMonth(start.getMonth() + 1));
+//         break;
+//       case 'Year':
+//         endDate = new Date(start.setFullYear(start.getFullYear() + 1));
+//         break;
+//       default:
+//         return res.status(400).json({ error: 'Invalid duration' });
+//     }
+//     const challenge = new Challenge({
+//       creatorId,
+//       assigneeIds,
+//       taskId,
+//       title,
+//       rules,
+//       exceptions,
+//       reward,
+//       status: status || 'active',
+//       createdAt: new Date(),
+//       startDate,
+//       endDate,
+//       duration,
+//       progress: [],
+//     });
+//     await challenge.save();
+//     creator.challenges.push(challenge._id);
+//     await creator.save();
+//     res.status(201).json(challenge);
+//   } catch (error) {
+//     res.status(500).json({ error: 'Failed to create challenge' });
+//   }
+// });
+
+
+
 router.post('/', async (req, res) => {
   try {
     const {
@@ -15,32 +78,32 @@ router.post('/', async (req, res) => {
       rules,
       exceptions,
       reward,
-      status,
       startDate,
+      endDate,
       duration,
+      activity,
     } = req.body;
+
+    if (!creatorId || !taskId || !title || !reward || !startDate || !endDate || !activity) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (end < start) {
+      return res.status(400).json({ error: 'End date cannot be before start date' });
+    }
+
     const creator = await User.findOne({ userId: creatorId });
     if (!creator) {
       return res.status(404).json({ error: 'Creator not found' });
     }
-    const start = new Date(startDate);
-    let endDate;
-    switch (duration) {
-      case 'Day':
-        endDate = new Date(start.setDate(start.getDate() + 1));
-        break;
-      case 'Week':
-        endDate = new Date(start.setDate(start.getDate() + 7));
-        break;
-      case 'Month':
-        endDate = new Date(start.setMonth(start.getMonth() + 1));
-        break;
-      case 'Year':
-        endDate = new Date(start.setFullYear(start.getFullYear() + 1));
-        break;
-      default:
-        return res.status(400).json({ error: 'Invalid duration' });
+
+    const users = await User.find({ userId: { $in: assigneeIds } });
+    if (users.length !== assigneeIds.length) {
+      return res.status(400).json({ error: 'One or more assignee userIds are invalid' });
     }
+
     const challenge = new Challenge({
       creatorId,
       assigneeIds,
@@ -49,21 +112,47 @@ router.post('/', async (req, res) => {
       rules,
       exceptions,
       reward,
-      status: status || 'active',
-      createdAt: new Date(),
-      startDate,
-      endDate,
-      duration,
-      progress: [],
+      startDate: start,
+      endDate: end,
+      duration, // Optional, e.g., "12"
+      activity,
+      progress: assigneeIds.map((userId) => ({
+        userId,
+        status: 'pending',
+        dailyProgress: [],
+      })),
     });
+
     await challenge.save();
+
     creator.challenges.push(challenge._id);
     await creator.save();
+
+    for (const assigneeId of assigneeIds) {
+      const assignee = users.find((u) => u.userId === assigneeId);
+      if (assignee) {
+        const notification = new Notification({
+          userId: assigneeId,
+          type: 'challenge_received',
+          message: `You have been assigned a new challenge: ${title}`,
+          challengeId: challenge._id,
+          read: false,
+          createdAt: new Date(),
+        });
+        await notification.save();
+        assignee.notifications.push(notification._id);
+        assignee.challenges.push(challenge._id);
+        await assignee.save();
+      }
+    }
+
     res.status(201).json(challenge);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create challenge' });
   }
 });
+// TODO: new / code for start and end dates
+
 
 router.patch('/:challengeId', async (req, res) => {
   try {
@@ -252,10 +341,64 @@ router.post('/:challengeId/progress', async (req, res) => {
   }
 });
 
+// router.patch('/:challengeId/edit', async (req, res) => {
+//   try {
+//     const { challengeId } = req.params;
+//     const { userId, title, rules, exceptions, reward, startDate, duration } = req.body;
+//     const challenge = await Challenge.findById(challengeId);
+//     if (!challenge) {
+//       return res.status(404).json({ error: 'Challenge not found' });
+//     }
+//     if (challenge.creatorId !== userId) {
+//       return res.status(403).json({ error: 'Only the creator can edit this challenge' });
+//     }
+//     const creationTime = new Date(challenge.createdAt);
+//     const currentTime = new Date();
+//     const timeDiff = (currentTime - creationTime) / (1000 * 60 * 60); // Hours
+//     if (timeDiff > 24) {
+//       return res.status(403).json({ error: 'Editing is only allowed within 24 hours of creation' });
+//     }
+//     challenge.title = title || challenge.title;
+//     challenge.rules = rules || challenge.rules;
+//     challenge.exceptions = exceptions || challenge.exceptions;
+//     challenge.reward = reward || challenge.reward;
+//     if (startDate && duration) {
+//       challenge.startDate = new Date(startDate);
+//       challenge.duration = duration;
+//       let endDate;
+//       const start = new Date(startDate);
+//       switch (duration) {
+//         case 'Day':
+//           endDate = new Date(start.setDate(start.getDate() + 1));
+//           break;
+//         case 'Week':
+//           endDate = new Date(start.setDate(start.getDate() + 7));
+//           break;
+//         case 'Month':
+//           endDate = new Date(start.setMonth(start.getMonth() + 1));
+//           break;
+//         case 'Year':
+//           endDate = new Date(start.setFullYear(start.getFullYear() + 1));
+//           break;
+//         default:
+//           return res.status(400).json({ error: 'Invalid duration' });
+//       }
+//       challenge.endDate = endDate;
+//     }
+//     await challenge.save();
+//     res.json(challenge);
+//   } catch (error) {
+//     res.status(500).json({ error: 'Failed to edit challenge' });
+//   }
+// });
+
+// PATCH /api/challenges/:challengeId/edit
+
 router.patch('/:challengeId/edit', async (req, res) => {
   try {
     const { challengeId } = req.params;
-    const { userId, title, rules, exceptions, reward, startDate, duration } = req.body;
+    const { userId, title, rules, exceptions, reward, startDate, endDate, duration, assigneeIds, activity, distance } = req.body;
+
     const challenge = await Challenge.findById(challengeId);
     if (!challenge) {
       return res.status(404).json({ error: 'Challenge not found' });
@@ -269,39 +412,91 @@ router.patch('/:challengeId/edit', async (req, res) => {
     if (timeDiff > 24) {
       return res.status(403).json({ error: 'Editing is only allowed within 24 hours of creation' });
     }
+
+    // Update challenge fields
     challenge.title = title || challenge.title;
     challenge.rules = rules || challenge.rules;
     challenge.exceptions = exceptions || challenge.exceptions;
     challenge.reward = reward || challenge.reward;
-    if (startDate && duration) {
-      challenge.startDate = new Date(startDate);
-      challenge.duration = duration;
-      let endDate;
+    challenge.activity = activity || challenge.activity;
+    challenge.duration = duration || challenge.duration;
+
+    // Update startDate and endDate
+    if (startDate && endDate) {
       const start = new Date(startDate);
-      switch (duration) {
-        case 'Day':
-          endDate = new Date(start.setDate(start.getDate() + 1));
-          break;
-        case 'Week':
-          endDate = new Date(start.setDate(start.getDate() + 7));
-          break;
-        case 'Month':
-          endDate = new Date(start.setMonth(start.getMonth() + 1));
-          break;
-        case 'Year':
-          endDate = new Date(start.setFullYear(start.getFullYear() + 1));
-          break;
-        default:
-          return res.status(400).json({ error: 'Invalid duration' });
+      const end = new Date(endDate);
+      if (end < start) {
+        return res.status(400).json({ error: 'End date cannot be before start date' });
       }
-      challenge.endDate = endDate;
+      challenge.startDate = start;
+      challenge.endDate = end;
     }
+
+    // Update assigneeIds and progress
+    if (Array.isArray(assigneeIds)) {
+      const users = await User.find({ userId: { $in: assigneeIds } });
+      if (users.length !== assigneeIds.length) {
+        return res.status(400).json({ error: 'One or more assignee userIds are invalid' });
+      }
+      challenge.assigneeIds = assigneeIds;
+
+      // Update progress: keep existing, add new assignees
+      const existingProgress = challenge.progress || [];
+      const newProgress = users.map(user => {
+        const existing = existingProgress.find(p => p.userId === user.userId);
+        return existing || {
+          userId: user.userId,
+          status: 'pending',
+          dailyProgress: [],
+        };
+      });
+      challenge.progress = newProgress;
+
+      // Notify new assignees
+      const originalAssigneeIds = challenge.assigneeIds || [];
+      const newAssigneeIds = assigneeIds.filter(id => !originalAssigneeIds.includes(id));
+      for (const newAssigneeId of newAssigneeIds) {
+        const newAssignee = users.find(u => u.userId === newAssigneeId);
+        if (newAssignee) {
+          const notification = new Notification({
+            userId: newAssigneeId,
+            type: 'challenge_received',
+            message: `You have been assigned a new challenge: ${challenge.title}`,
+            challengeId: challenge._id,
+            read: false,
+            createdAt: new Date(),
+          });
+          await notification.save();
+          newAssignee.notifications.push(notification._id);
+          await newAssignee.save();
+        }
+      }
+    }
+
+    // Update associated Task
+    if (activity || distance || startDate || endDate || reward) {
+      const task = await Task.findById(challenge.taskId);
+      if (!task) {
+        return res.status(404).json({ error: 'Associated task not found' });
+      }
+      task.activity = activity || task.activity;
+      task.distance = distance || task.distance;
+      task.startDate = startDate ? new Date(startDate) : task.startDate;
+      task.endDate = endDate ? new Date(endDate) : task.endDate;
+      task.points = reward || task.points;
+      await task.save();
+    }
+
     await challenge.save();
     res.json(challenge);
   } catch (error) {
+    console.error('Error editing challenge:', error);
     res.status(500).json({ error: 'Failed to edit challenge' });
   }
 });
+
+// TODO: adding new /edit for start date and end date
+
 
 router.delete('/:challengeId', async (req, res) => {
   try {

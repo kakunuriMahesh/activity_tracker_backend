@@ -156,6 +156,58 @@ router.get('/:userId', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
+
+// TODO:// New leaderboard endpoint
+router.get('/leaderboard', async (req, res) => {
+  try {
+    // Aggregate points from completed challenges
+    const leaderboard = await User.aggregate([
+      {
+        $lookup: {
+          from: 'challenges',
+          localField: 'challenges',
+          foreignField: '_id',
+          as: 'challengeDetails',
+        },
+      },
+      {
+        $unwind: {
+          path: '$challengeDetails',
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $match: {
+          'challengeDetails.status': 'completed',
+        },
+      },
+      {
+        $group: {
+          _id: {
+            userId: '$userId',
+            name: '$name',
+          },
+          totalPoints: { $sum: '$challengeDetails.reward' },
+        },
+      },
+      {
+        $sort: { totalPoints: -1 },
+      },
+      {
+        $project: {
+          userId: '$_id.userId',
+          name: '$_id.name',
+          totalPoints: 1,
+          _id: 0,
+        },
+      },
+    ]);
+
+    res.json(leaderboard);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
 module.exports = router;
 
 
